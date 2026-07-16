@@ -376,7 +376,11 @@ def compute_health_score(
         exam_vol = data.get("exames", {}).get("volume", pd.DataFrame())
 
         if not sm.empty and "indicador" in sm.columns and not exam_vol.empty:
-            # Filter by units if provided, otherwise use the Total row
+            # Filter specifically for "Periódico" in exam_vol to get the correct denominator
+            periodic_mask = exam_vol["tipo"].astype(str).str.contains("Periódico", case=False, na=False)
+            periodic_exams = exam_vol[periodic_mask]
+
+            # Filter SM by units if provided, otherwise use the Total row
             if selected_units:
                 sm_data = filter_saude_mental_by_units(sm, selected_units)
                 if sm_data.empty:
@@ -387,11 +391,9 @@ def compute_health_score(
             if not sm_data.empty:
                 monthly_scores = []
                 for m in months:
-                    if m in sm_data.columns and m in exam_vol.columns:
-                        # Soma dos casos alterados no mês (unidades selecionadas ou total)
+                    if m in sm_data.columns and m in periodic_exams.columns:
                         casos = float(sm_data[m].sum() or 0)
-                        # Soma dos exames no mês (assume-se que exam_vol já está no escopo correto)
-                        v_exames = float(exam_vol[m].sum() or 0)
+                        v_exames = float(periodic_exams[m].sum() or 0)
 
                         if v_exames > 0:
                             taxa = (casos / v_exames) * 100
@@ -469,20 +471,36 @@ def compute_health_score_breakdown(
     periodicos_avg = sum(periodicos_scores) / len(periodicos_scores) if periodicos_scores else 0
     presenca_avg = sum(presenca_scores) / len(presenca_scores) if presenca_scores else 0
 
-    # Saúde Mental score
+    # Saúde Mental score (reusing logic from compute_health_score)
     mental_score = 85.0
     try:
         sm = data.get("saude_mental", pd.DataFrame())
-        if not sm.empty and "indicador" in sm.columns:
-            total_row = sm[sm["indicador"].str.lower().str.contains("total", na=False)]
-            if not total_row.empty:
-                vals = []
+        exam_vol = data.get("exames", {}).get("volume", pd.DataFrame())
+
+        if not sm.empty and "indicador" in sm.columns and not exam_vol.empty:
+            periodic_mask = exam_vol["tipo"].astype(str).str.contains("Periódico", case=False, na=False)
+            periodic_exams = exam_vol[periodic_mask]
+
+            if selected_units:
+                sm_data = filter_saude_mental_by_units(sm, selected_units)
+                if sm_data.empty:
+                    sm_data = sm[sm["indicador"].str.lower().str.contains("total", na=False)]
+            else:
+                sm_data = sm[sm["indicador"].str.lower().str.contains("total", na=False)]
+
+            if not sm_data.empty:
+                monthly_scores = []
                 for m in months:
-                    if m in total_row.columns:
-                        vals.append(float(total_row.iloc[0][m] or 0))
-                if vals:
-                    avg_srq = sum(vals) / len(vals)
-                    mental_score = max(40.0, 100.0 - (avg_srq * 4.0))
+                    if m in sm_data.columns and m in periodic_exams.columns:
+                        casos = float(sm_data[m].sum() or 0)
+                        v_exames = float(periodic_exams[m].sum() or 0)
+                        if v_exames > 0:
+                            taxa = (casos / v_exames) * 100
+                            monthly_scores.append(max(0.0, 100.0 - taxa))
+                        else:
+                            monthly_scores.append(100.0)
+                if monthly_scores:
+                    mental_score = sum(monthly_scores) / len(monthly_scores)
     except Exception:
         pass
 
