@@ -16,6 +16,7 @@ import sys
 from datetime import datetime
 from hashlib import sha1
 from typing import Any, Iterable
+from collections.abc import Mapping
 
 for _name in (
     "OMP_NUM_THREADS",
@@ -355,105 +356,192 @@ def normalized_percent(value: object) -> float:
 
 
 
-def _fallback_health_score_breakdown(
-    dashboard_data: dict,
-    months: list[str],
-    units: list[str] | None = None,
-) -> pd.DataFrame:
-    """Build the three index components when the transforms layer returns no rows.
+def _coerce_float(value: object, default: float = 0.0) -> float:
+    """Best-effort float conversion for numeric or formatted percentage values."""
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return default
+    text = text.replace('%', '').replace('pontos', '').replace('no índice', '')
+    text = text.replace('no indice', '').replace('ponto', '').strip()
+    if ',' in text and '.' in text:
+        text = text.replace('.', '').replace(',', '.')
+    else:
+        text = text.replace(',', '.')
+    try:
+        return float(text)
+    except ValueError:
+        return default
 
-    This is a defensive fallback only. The normal calculation from
-    ``compute_health_score_breakdown`` remains the primary source.
-    """
-    del units  # The workbook currently exposes periodic exam volume globally.
 
-    selected = [str(month) for month in months if str(month).strip()]
-    pct = dashboard_data.get("exames", {}).get("percentuais", {})
-    pct_months = [str(month) for month in pct.get("meses", [])]
-    periodic_values = list(pct.get("pct_periodicos_acum", []))
-    absence_values = list(pct.get("pct_faltas", []))
+def _first_present(mapping: Mapping[str, object], *keys: str, default: object = None) -> object:
+    for key in keys:
+        if key in mapping and mapping[key] not in (None, ''):
+            return mapping[key]
+    return default
 
-    periodic_scores: list[float] = []
-    presence_scores: list[float] = []
-    for month in selected:
-        if month not in pct_months:
+
+def _pick_component_icon(label: str, item: Mapping[str, object]) -> str:
+    explicit_icon = _first_present(item, 'icon', 'emoji', 'symbol', default='')
+    if explicit_icon:
+        return str(explicit_icon)
+    label_lower = label.lower()
+    if 'presen' in label_lower:
+        return '✅'
+    if 'saúde' in label_lower or 'saude' in label_lower or 'srq' in label_lower or 'mental' in label_lower:
+        return '🧠'
+    if 'exame' in label_lower or 'periód' in label_lower or 'period' in label_lower:
+        return '🧪'
+    return '📊'
+
+
+def _normalize_health_breakdown_items(breakdown: object) -> list[dict[str, object]]:
+    items_source: list[object] = []
+    if isinstance(breakdown, Mapping):
+        components = breakdown.get('components')
+        if isinstance(components, (list, tuple)):
+            items_source = list(components)
+        else:
+            items_source = [value for value in breakdown.values() if isinstance(value, Mapping)]
+    elif isinstance(breakdown, (list, tuple)):
+        items_source = list(breakdown)
+
+    normalized_items: list[dict[str, object]] = []
+    for index, item in enumerate(items_source):
+        if not isinstance(item, Mapping):
             continue
-        idx = pct_months.index(month)
-        if 0 <= idx < len(periodic_values):
-            periodic_scores.append(
-                max(0.0, min(normalized_percent(periodic_values[idx]), 100.0))
+
+        label = str(
+            _first_present(
+                item,
+                'label', 'title', 'name', 'component', 'metric', 'indicator',
+                default=f'Componente {index + 1}',
             )
-        if 0 <= idx < len(absence_values):
-            absence = max(0.0, min(normalized_percent(absence_values[idx]), 100.0))
-            presence_scores.append(100.0 - absence)
-
-    if not periodic_scores or not presence_scores:
-        return pd.DataFrame(columns=["Componente", "Valor", "Peso", "Pontos"])
-
-    periodic_score = sum(periodic_scores) / len(periodic_scores)
-    presence_score = sum(presence_scores) / len(presence_scores)
-
-    # Saúde Mental = 100 - (SRQ-20 alterados / exames periódicos realizados × 100)
-    exam_volume = dashboard_data.get("exames", {}).get("volume", pd.DataFrame())
-    mental_data = dashboard_data.get("saude_mental", pd.DataFrame())
-    total_periodic = 0.0
-    total_altered = 0.0
-
-    if isinstance(exam_volume, pd.DataFrame) and not exam_volume.empty:
-        label_col = next(
-            (col for col in ("tipo_short", "tipo", "indicador", "Tipo", "Indicador") if col in exam_volume.columns),
-            None,
         )
-        periodic_rows = pd.DataFrame()
-        if label_col:
-            labels = exam_volume[label_col].astype(str)
-            periodic_rows = exam_volume[
-                labels.str.contains(r"peri[oó]dic", case=False, na=False, regex=True)
-            ]
-        for month in selected:
-            if not periodic_rows.empty and month in periodic_rows.columns:
-                total_periodic += float(
-                    pd.to_numeric(periodic_rows[month], errors="coerce").fillna(0.0).sum()
-                )
 
-    if isinstance(mental_data, pd.DataFrame) and not mental_data.empty:
-        indicator_col = next(
-            (col for col in ("indicador", "Indicador", "unidade", "Unidade") if col in mental_data.columns),
-            None,
+        raw_value = _first_present(
+            item,
+            'value', 'percentage', 'percent', 'pct', 'score', 'current',
+            'result', 'value_pct', 'display_value', 'progress',
+            default=0.0,
         )
-        mental_rows = mental_data
-        if indicator_col:
-            indicators = mental_data[indicator_col].astype(str)
-            total_rows = mental_data[indicators.str.contains("total", case=False, na=False)]
-            if not total_rows.empty:
-                mental_rows = total_rows
-        for month in selected:
-            if month in mental_rows.columns:
-                total_altered += float(
-                    pd.to_numeric(mental_rows[month], errors="coerce").fillna(0.0).sum()
-                )
+        percent_value = normalized_percent(_coerce_float(raw_value, 0.0))
+        percent_value = max(0.0, min(percent_value, 100.0))
 
-    mental_score = 0.0
-    if total_periodic > 0:
-        mental_score = max(0.0, min(100.0 - (total_altered / total_periodic * 100.0), 100.0))
+        normalized_items.append({
+            'label': label,
+            'icon': _pick_component_icon(label, item),
+            'percent': percent_value,
+        })
 
-    components = [
-        ("Exames periódicos", periodic_score, 0.40),
-        ("Presença no Periódico", presence_score, 0.40),
-        ("Saúde Mental (SRQ-20)", mental_score, 0.20),
-    ]
-    return pd.DataFrame(
-        [
-            {
-                "Componente": name,
-                "Valor": round(value, 1),
-                "Peso": f"{weight * 100:.0f}%",
-                "Pontos": round(value * weight, 1),
-            }
-            for name, value, weight in components
-        ]
+    return normalized_items
+
+
+def render_health_score_breakdown_cards(breakdown: object) -> None:
+    """Render simplified health score cards with only title, main percentage and progress bar."""
+    items = _normalize_health_breakdown_items(breakdown)
+    if not items:
+        st.info('Não há componentes do índice disponíveis para o filtro atual.')
+        return
+
+    st.markdown(
+        """
+        <style>
+        .health-components-wrapper { margin: 0.35rem 0 1rem 0; }
+        .health-components-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0 0 0.85rem 0;
+            color: #F8FAFC;
+            font-size: 1.05rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+        .health-breakdown-card {
+            background: linear-gradient(180deg, rgba(13, 37, 67, 0.96) 0%, rgba(11, 31, 57, 0.98) 100%);
+            border: 1px solid rgba(76, 153, 255, 0.22);
+            border-radius: 18px;
+            padding: 1rem 1rem 0.95rem 1rem;
+            min-height: 162px;
+            box-shadow: 0 12px 28px rgba(3, 12, 24, 0.22);
+        }
+        .health-breakdown-card-top {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-bottom: 1.2rem;
+        }
+        .health-breakdown-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(59, 130, 246, 0.16);
+            border: 1px solid rgba(96, 165, 250, 0.25);
+            font-size: 0.95rem;
+            flex: 0 0 30px;
+        }
+        .health-breakdown-label {
+            color: #F8FAFC;
+            font-size: 0.88rem;
+            font-weight: 700;
+            line-height: 1.25;
+        }
+        .health-breakdown-value {
+            color: #F8FAFC;
+            font-size: 2.05rem;
+            font-weight: 800;
+            line-height: 1;
+            margin: 0 0 1.45rem 0;
+            letter-spacing: -0.02em;
+        }
+        .health-breakdown-progress {
+            width: 100%;
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.20);
+            overflow: hidden;
+        }
+        .health-breakdown-progress-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #4F95FF 0%, #31C2EB 100%);
+        }
+        @media (max-width: 768px) {
+            .health-breakdown-card { min-height: auto; }
+            .health-breakdown-value { font-size: 1.8rem; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
+    st.markdown('<div class="health-components-wrapper"><div class="health-components-title">Componentes do índice</div></div>', unsafe_allow_html=True)
+    columns = st.columns(2)
+    for index, item in enumerate(items):
+        column = columns[index % 2]
+        with column:
+            st.markdown(
+                f"""
+                <div class="health-breakdown-card">
+                    <div class="health-breakdown-card-top">
+                        <div class="health-breakdown-icon">{item['icon']}</div>
+                        <div class="health-breakdown-label">{item['label']}</div>
+                    </div>
+                    <div class="health-breakdown-value">{item['percent']:.1f}%</div>
+                    <div class="health-breakdown-progress">
+                        <div class="health-breakdown-progress-fill" style="width: {item['percent']:.1f}%"></div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 def _variation_style(value: object, semantics: str = "neutral") -> str:
     try:
@@ -1388,8 +1476,6 @@ elif page == "Visão Geral":
     # O indicador geral em formato radial foi removido para evitar uma leitura
     # ambígua como se representasse a porcentagem de empregados saudáveis.
     breakdown = compute_health_score_breakdown(data, selected_months, selected_units)
-    if breakdown is None or getattr(breakdown, "empty", True):
-        breakdown = _fallback_health_score_breakdown(data, selected_months, selected_units)
     with st.container(key="health_score_components_section"):
         render_health_score_breakdown_cards(breakdown)
 
