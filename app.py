@@ -215,7 +215,6 @@ from src.components import (  # noqa: E402
     render_filter_context,
     render_header,
     render_health_score_breakdown_cards,
-    render_health_score_radial,
     render_insight,
     render_kpi_row,
     render_ranking,
@@ -279,7 +278,6 @@ from src.transforms import (  # noqa: E402
     compare_overview_periods,
     compute_absenteismo_by_cause,
     compute_absenteismo_by_gender,
-    compute_health_score,
     compute_health_score_breakdown,
     compute_overview_kpis,
     filter_saude_mental_by_units,
@@ -1284,30 +1282,12 @@ elif page == "Visão Geral":
             "Os gráficos abaixo utilizam somente os valores reconhecidos e validados."
         )
 
-    health_score = compute_health_score(data, selected_months, selected_units)
+    # Exibe somente os componentes individuais do índice.
+    # O indicador geral em formato radial foi removido para evitar uma leitura
+    # ambígua como se representasse a porcentagem de empregados saudáveis.
     breakdown = compute_health_score_breakdown(data, selected_months, selected_units)
-    with st.container(key="health_score_section"):
-        render_section_header("🎯", "Índice de Saúde Ocupacional")
-        st.markdown(
-            '<p class="health-section-subtitle">'
-            'Leitura consolidada dos dois componentes ativos do período selecionado.'
-            '</p>',
-            unsafe_allow_html=True,
-        )
-
-        col_score, col_breakdown = st.columns([0.88, 1.62], gap="large")
-
-        with col_score:
-            with st.container(key="health_score_chart"):
-                render_health_score_radial(health_score)
-
-        with col_breakdown:
-            with st.container(key="health_score_breakdown"):
-                render_health_score_breakdown_cards(breakdown)
-                st.caption(
-                    "O índice considera Exames periódicos e Presença no Periódico, "
-                    "com participação equivalente de 50% para cada componente."
-                )
+    with st.container(key="health_score_components_section"):
+        render_health_score_breakdown_cards(breakdown)
 
     kpis = compute_overview_kpis(data, selected_months, selected_units)
     latest_mental = metric_series(monthly_metrics, "SRQ-20")
