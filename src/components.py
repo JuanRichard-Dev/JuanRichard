@@ -122,8 +122,16 @@ def _sparkline_svg(series: list[float] | tuple[float, ...] | None, color: str) -
 
 
 def _target_status(value: float, target: float | None, target_direction: str) -> tuple[str, str, str]:
-    # REMOVIDO: badge CRITICO / Meta solicitado pelo usuario
-    return "", "", ""
+    if target is None:
+        return "", "", ""
+    achieved = value >= target if target_direction == "higher" else value <= target
+    gap = value - target
+    if achieved:
+        return "Dentro da meta", "success", f"Meta: {target:,.1f}"
+    relative_gap = abs(gap) / max(abs(target), 1.0)
+    status = "Atenção" if relative_gap <= 0.15 else "Crítico"
+    css_class = "warning" if status == "Atenção" else "danger"
+    return status, css_class, f"Meta: {target:,.1f}"
 
 
 def _build_kpi_html(
@@ -166,8 +174,8 @@ def _build_kpi_html(
         lbl = trend_label or "em relação ao mês anterior"
         trend_html = f'<div class="kpi-trend {semantic_class}">{arrow} {trend_text} {lbl}</div>'
 
-    # Badge CRITICO/Meta desabilitado conforme solicitado
-    status, status_class, target_text = ("", "", "")
+    # Executive cards intentionally omit target/status badges. Targets may remain
+    # available to business logic, but are not rendered in the visual card.
     status_html = ""
 
     context_html = f'<div class="kpi-context">{context}</div>' if context else ""
@@ -266,7 +274,7 @@ def render_health_score_radial(score: float) -> None:
         '</div>'
         '<div class="health-score-visual-caption">'
         '<strong>Saúde ocupacional</strong>'
-        '<span>Composição inteligente: Exames + Presença + Saúde Mental (V12).</span>'
+        '<span>Composição consolidada dos dois indicadores ativos.</span>'
         '</div>'
         '</div>'
     )
@@ -274,9 +282,9 @@ def render_health_score_radial(score: float) -> None:
 
 
 def render_health_score_breakdown_cards(frame) -> None:
-    """Render the active score components without targets or status badges."""
+    """Render only component title, percentage and progress bar."""
     if frame is None or getattr(frame, "empty", True):
-        st.info("Não há composição do índice para o período selecionado.")
+        # Do not display a blue warning in the middle of the executive view.
         return
 
     icons = {
@@ -288,10 +296,13 @@ def render_health_score_breakdown_cards(frame) -> None:
     cards: list[str] = []
     for _, row in frame.iterrows():
         component = str(row.get("Componente", "Indicador"))
-        value = max(0.0, min(float(row.get("Valor", 0.0) or 0.0), 100.0))
-        points = float(row.get("Pontos", 0.0) or 0.0)
-        weight = str(row.get("Peso", "—"))
+        try:
+            value = float(row.get("Valor", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            value = 0.0
+        value = max(0.0, min(value, 100.0))
         icon = icons.get(component, "📊")
+
         cards.extend(
             [
                 '<article class="health-breakdown-card health-clean-card">',
@@ -299,12 +310,10 @@ def render_health_score_breakdown_cards(frame) -> None:
                 f'<span class="health-breakdown-icon">{icon}</span>',
                 '<div class="health-breakdown-heading">',
                 f'<strong>{html.escape(component)}</strong>',
-                f'<span>Participação no índice: {html.escape(weight)}</span>',
                 '</div>',
                 '</div>',
-                '<div class="health-clean-value-row">',
+                '<div class="health-clean-value-row health-clean-value-only">',
                 f'<strong>{value:.1f}%</strong>',
-                f'<span>{points:.1f} pontos no índice</span>',
                 '</div>',
                 '<div class="health-breakdown-progress health-clean-progress" aria-hidden="true">',
                 f'<span style="width:{value:.1f}%"></span>',
@@ -313,15 +322,17 @@ def render_health_score_breakdown_cards(frame) -> None:
             ]
         )
 
+    if not cards:
+        return
+
     wrapper = (
-        '<div class="health-breakdown-intro health-clean-intro">'
-        '<div><span class="health-breakdown-eyebrow">COMPOSIÇÃO ATUAL</span>'
-        '<h3>Componentes do índice</h3></div>'
-        '<p>Leitura objetiva dos dois indicadores ativos no período selecionado.</p>'
+        '<div class="health-breakdown-intro health-clean-intro health-clean-intro-title-only">'
+        '<div><h3>Componentes do índice</h3></div>'
         '</div>'
         '<div class="health-breakdown-grid health-clean-grid">'
         + "".join(cards)
         + '</div>'
+        '<!-- INDEX_COMPONENTS_FIX_V4 -->'
     )
     st.markdown(wrapper, unsafe_allow_html=True)
 
@@ -1050,74 +1061,3 @@ def shad_collapsible(title: str, content_func, *,
             st.markdown('<div class="animate-expand open">', unsafe_allow_html=True)
             content_func()
             st.markdown('</div>', unsafe_allow_html=True)
-
-
-def render_premium_progress_bar(
-    label: str,
-    value: float,
-    max_value: float = 100.0,
-    color: str = "#EC4899",
-    show_delta: float | None = None,
-    height: int = 28,
-) -> None:
-    """Render a modern premium progress bar (V12)."""
-    pct = max(0.0, min(float(value) / max(max_value, 1e-6) * 100.0, 100.0))
-    delta_html = ""
-    if show_delta is not None:
-        delta_val = float(show_delta)
-        if delta_val > 0.05:
-            delta_label = f"subiu {abs(delta_val):.1f} pontos".replace(".", ",")
-            delta_color = "#34D399"
-        elif delta_val < -0.05:
-            delta_label = f"caiu {abs(delta_val):.1f} pontos".replace(".", ",")
-            delta_color = "#F87171"
-        else:
-            delta_label = "estável"
-            delta_color = "#94A3B8"
-        delta_html = f'<span style="color:{delta_color};font-weight:600;margin-left:10px;font-size:0.9rem">{delta_label}</span>'
-
-    markup = f'''
-    <div class="premium-progress-card" style="
-        background: linear-gradient(135deg, rgba(26,20,51,0.95), rgba(30,18,64,0.9));
-        border: 1px solid rgba(124,58,237,0.25);
-        border-radius: 16px;
-        padding: 16px 20px;
-        margin-bottom: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-    ">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-            <span style="color:#E2E8F0;font-weight:600;font-size:0.95rem;">{html.escape(label)}</span>
-            <div style="display:flex;align-items:center;">
-                <span style="color:#F8FAFC;font-weight:700;font-size:1.15rem;">{pct:.1f}%</span>
-                {delta_html}
-            </div>
-        </div>
-        <div style="
-            width:100%;
-            height:{height}px;
-            background: rgba(15,10,31,0.8);
-            border-radius: 999px;
-            overflow: hidden;
-            position: relative;
-            box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
-        ">
-            <div style="
-                width: {pct:.2f}%;
-                height: 100%;
-                background: linear-gradient(90deg, {color}cc, {color});
-                border-radius: 999px;
-                transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
-                box-shadow: 0 0 12px {color}66;
-                position: relative;
-            ">
-                <div style="
-                    position: absolute;
-                    top: 0; left: 0; right: 0; bottom: 0;
-                    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
-                    animation: shimmer 2.2s infinite;
-                "></div>
-            </div>
-        </div>
-    </div>
-    '''
-    st.markdown(markup, unsafe_allow_html=True)
