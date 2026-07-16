@@ -1,0 +1,23 @@
+{
+  "targets": {
+    "health_score": 80.0,
+    "periodicos_pct": 95.0,
+    "faltas_pct_max": 5.0,
+    "absenteismo_monthly_max": 500.0,
+    "mental_cases_max": 10.0,
+    "variation_warning_pct": 15.0
+  },
+  "analytics": {
+    "moving_average_window": 3,
+    "forecast_months": 2,
+    "forecast_min_points": 3,
+    "default_daily_absence_cost": 350.0
+  },
+  "data": {
+    "stale_after_days": 35
+  },
+  "ui": {
+    "max_alerts": 4,
+    "table_height": 420
+  }
+}

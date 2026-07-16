@@ -1,0 +1,4 @@
+-r requirements.txt
+# Install only when WAREHOUSE_ENABLED=true.
+SQLAlchemy==2.0.44
+psycopg[binary]==3.2.13

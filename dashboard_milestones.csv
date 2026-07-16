@@ -1,0 +1,6 @@
+Mes,Titulo,Descricao,Ativo
+# INSTRUÇÕES: Substitua ou adicione linhas abaixo com marcos reais do Serviço Médico.
+# Coluna "Ativo" aceita: true / 1 / sim / yes
+# Exemplo (apague ou comente com # quando não usar):
+# Fevereiro,Campanha de Vacinação Gripe,Ação preventiva sazonal com foco em horistas,true
+# Março,Auditoria de Processos de Exames,Revisão completa dos fluxos de agendamento,false

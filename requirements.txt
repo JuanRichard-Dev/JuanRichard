@@ -1,0 +1,11 @@
+# Streamlit Cloud dependencies — keep this file in the repository root, beside app.py.
+plotly==6.5.2
+streamlit==1.58.0
+pandas==2.3.3
+numpy==2.3.5
+pyarrow==20.0.0
+openpyxl==3.1.5
+reportlab==4.4.10
+requests==2.32.5
+altair==5.3.0
+# Altair + Vega-Lite for beautiful declarative interactive charts (explored as modern alternative/complement to Plotly)

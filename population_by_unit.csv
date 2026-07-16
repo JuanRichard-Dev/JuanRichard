@@ -1,0 +1,8 @@
+Unidade,Populacao
+# Preencha com a população real de cada unidade para cálculo de taxas normalizadas (ex: por 100 colaboradores)
+# Deixe em branco se preferir usar apenas valores absolutos
+B2BN,
+B2BF,
+SF,
+SITE,
+OUTROS,
