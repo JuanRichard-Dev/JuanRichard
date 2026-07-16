@@ -70,16 +70,6 @@ def severity_proxy(kpis: dict[str, dict[str, Any]]) -> tuple[float, float]:
     return current, previous
 
 
-def _status(value: float, target: float | None, direction: str, language: str) -> str:
-    if target is None:
-        return tr("informational", language)
-    achieved = value >= target if direction == "higher" else value <= target
-    if achieved:
-        return tr("within_target", language)
-    gap_ratio = abs(value - target) / max(abs(target), 1.0)
-    return tr("attention", language) if gap_ratio <= 0.15 else tr("critical", language)
-
-
 def executive_comparison_table(
     data: dict[str, Any],
     selected_months: list[str],
@@ -88,28 +78,27 @@ def executive_comparison_table(
     *,
     language: str = "pt",
 ) -> pd.DataFrame:
+    """Comparison table without Meta/Status columns."""
     language = normalize_language(language)
     kpis = compute_overview_kpis(data, selected_months, selected_units)
     mental_current, mental_previous = mental_latest(monthly_metrics)
     periodic_current, periodic_previous = periodic_coverage(data, selected_months)
     rows = [
-        (tr("exams", language), kpis["exames"]["current"], kpis["exames"]["previous"], None, "higher"),
-        (tr("appointments", language), kpis["atendimentos"]["current"], kpis["atendimentos"]["previous"], None, "higher"),
-        (tr("active_leaves", language), kpis["afastamentos"]["current"], kpis["afastamentos"]["previous"], None, "lower"),
-        (tr("lost_days", language), kpis["absenteismo"]["current"], kpis["absenteismo"]["previous"], TARGETS["absenteismo_monthly_max"], "lower"),
-        (tr("srq_cases", language), mental_current, mental_previous, TARGETS["mental_cases_max"], "lower"),
-        (tr("periodic_coverage", language), periodic_current, periodic_previous, TARGETS["periodicos_pct"], "higher"),
+        (tr("exams", language), kpis["exames"]["current"], kpis["exames"]["previous"]),
+        (tr("appointments", language), kpis["atendimentos"]["current"], kpis["atendimentos"]["previous"]),
+        (tr("active_leaves", language), kpis["afastamentos"]["current"], kpis["afastamentos"]["previous"]),
+        (tr("lost_days", language), kpis["absenteismo"]["current"], kpis["absenteismo"]["previous"]),
+        (tr("srq_cases", language), mental_current, mental_previous),
+        (tr("periodic_coverage", language), periodic_current, periodic_previous),
     ]
     records: list[dict[str, Any]] = []
-    for label, current, previous, target, direction in rows:
+    for label, current, previous in rows:
         records.append(
             {
                 tr("metric", language): label,
                 tr("current", language): float(current),
                 tr("previous", language): float(previous),
                 tr("variation", language): calc_variation(float(current), float(previous)),
-                tr("target", language): float(target) if target is not None else None,
-                tr("status", language): _status(float(current), target, direction, language),
             }
         )
     return pd.DataFrame(records)
