@@ -297,160 +297,18 @@ from src.warehouse import WarehouseError, sync_to_warehouse  # noqa: E402
 # ---------------------------------------------------------------------------
 st.markdown(get_css(), unsafe_allow_html=True)
 
-# TEMA GLOBAL + UX RESPONSIVA DO PAINEL LATERAL
-# Mantém o conteúdo fluido, ocupa toda a largura disponível e preserva o
-# controle nativo do Streamlit para recolher/reabrir a sidebar.
+# FORÇA TEMA ROXO DIRETO NO APP (garantia extra além do styles.py)
 st.markdown("""
 <style>
-    :root {
-        --sidebar-control-size: 42px;
-        --sidebar-control-offset: 12px;
-    }
-
-    html,
-    body,
-    .stApp,
-    [data-testid="stAppViewContainer"],
-    [data-testid="stMain"] {
-        width: 100% !important;
-        max-width: 100% !important;
-        overflow-x: hidden !important;
-        box-sizing: border-box !important;
-    }
-
-    .stApp {
-        background: #130A2B !important;
-    }
-
-    /* A área principal sempre ocupa 100% da largura que estiver disponível.
-       Quando a sidebar é recolhida, o próprio layout flex do Streamlit entrega
-       toda a viewport ao conteúdo, sem manter largura máxima artificial. */
-    [data-testid="stMain"] {
-        flex: 1 1 auto !important;
-        min-width: 0 !important;
-        margin-left: 0 !important;
-        transition: width 180ms ease, margin 180ms ease !important;
-    }
-
-    [data-testid="stMainBlockContainer"],
-    .stMainBlockContainer,
-    section.main > div.block-container {
-        width: 100% !important;
-        max-width: none !important;
-        min-width: 0 !important;
-        padding-left: clamp(0.75rem, 1.5vw, 1.5rem) !important;
-        padding-right: clamp(0.75rem, 1.5vw, 1.5rem) !important;
-        box-sizing: border-box !important;
-    }
-
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #170E33 0%, #130A2B 100%) !important;
+    .stApp { background: #130A2B !important; }
+    section[data-testid="stSidebar"] { 
+        background: linear-gradient(180deg, #170E33 0%, #130A2B 100%) !important; 
         border-right: 1px solid rgba(139,92,246,0.18) !important;
-        transition: transform 180ms ease, width 180ms ease !important;
     }
-
-    /* Mantém visíveis os controles nativos de fechar e reabrir a sidebar.
-       Os seletores cobrem as estruturas usadas nas versões atuais do Streamlit
-       e oferecem fallback para variações do DOM. */
-    [data-testid="stSidebarCollapseButton"],
-    [data-testid="collapsedControl"],
-    button[data-testid="stSidebarCollapseButton"] {
-        display: flex !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
-        z-index: 1000002 !important;
-    }
-
-    [data-testid="collapsedControl"] {
-        position: fixed !important;
-        top: var(--sidebar-control-offset) !important;
-        left: var(--sidebar-control-offset) !important;
-        width: var(--sidebar-control-size) !important;
-        height: var(--sidebar-control-size) !important;
-    }
-
-    [data-testid="collapsedControl"] button,
-    [data-testid="stSidebarCollapseButton"] button,
-    button[data-testid="stSidebarCollapseButton"] {
-        width: var(--sidebar-control-size) !important;
-        min-width: var(--sidebar-control-size) !important;
-        height: var(--sidebar-control-size) !important;
-        min-height: var(--sidebar-control-size) !important;
-        padding: 0 !important;
-        border-radius: 12px !important;
-        border: 1px solid rgba(139, 92, 246, 0.42) !important;
-        background: rgba(20, 12, 45, 0.96) !important;
-        color: #F8FAFC !important;
-        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.30) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        transition: transform 160ms ease, border-color 160ms ease,
-                    background 160ms ease, box-shadow 160ms ease !important;
-    }
-
-    [data-testid="collapsedControl"] button:hover,
-    [data-testid="stSidebarCollapseButton"] button:hover,
-    button[data-testid="stSidebarCollapseButton"]:hover {
-        transform: translateY(-1px) !important;
-        border-color: rgba(196, 181, 253, 0.75) !important;
-        background: rgba(39, 24, 78, 0.98) !important;
-        box-shadow: 0 12px 32px rgba(76, 29, 149, 0.34) !important;
-    }
-
-    [data-testid="collapsedControl"] button:focus-visible,
-    [data-testid="stSidebarCollapseButton"] button:focus-visible,
-    button[data-testid="stSidebarCollapseButton"]:focus-visible {
-        outline: 3px solid rgba(167, 139, 250, 0.42) !important;
-        outline-offset: 2px !important;
-    }
-
-    /* Caso o tema global oculte o cabeçalho padrão, mantém somente o controle
-       necessário à reabertura da sidebar e evita reexibir a barra de ferramentas. */
-    header[data-testid="stHeader"] {
-        display: block !important;
-        visibility: visible !important;
-        height: 0 !important;
-        min-height: 0 !important;
-        background: transparent !important;
-        pointer-events: none !important;
-        z-index: 1000001 !important;
-    }
-
-    header[data-testid="stHeader"] [data-testid="collapsedControl"] {
-        pointer-events: auto !important;
-    }
-
-    header[data-testid="stHeader"] [data-testid="stToolbar"],
-    header[data-testid="stHeader"] [data-testid="stDecoration"] {
-        display: none !important;
-    }
-
-    /* Garante expansão total mesmo nas variações de estado/atributo do DOM. */
-    section[data-testid="stSidebar"][aria-expanded="false"] ~ [data-testid="stMain"],
-    section[data-testid="stSidebar"][data-state="collapsed"] ~ [data-testid="stMain"],
-    section[data-testid="stSidebar"][data-collapsed="true"] ~ [data-testid="stMain"] {
-        width: 100vw !important;
-        max-width: 100vw !important;
-        margin-left: 0 !important;
-    }
-
     /* Dashboard headers e cards */
     div[data-testid="stVerticalBlock"] > div { }
-
-    @media (max-width: 768px) {
-        :root {
-            --sidebar-control-size: 40px;
-            --sidebar-control-offset: 8px;
-        }
-
-        [data-testid="stMainBlockContainer"],
-        .stMainBlockContainer,
-        section.main > div.block-container {
-            padding-left: 0.65rem !important;
-            padding-right: 0.65rem !important;
-        }
-    }
+    /* Remove setinha << que estava duplicada */
+    #collapseSidebarBtn, #expandSidebarBtn { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
