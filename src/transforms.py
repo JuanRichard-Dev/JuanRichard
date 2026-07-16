@@ -369,21 +369,38 @@ def compute_health_score(
     periodicos_avg = sum(periodicos_scores) / len(periodicos_scores)
     presenca_avg = sum(presenca_scores) / len(presenca_scores)
 
-    # Saúde Mental component (inverse of SRQ-20 rate)
+    # Saúde Mental component (real rate: cases / periodic exams)
     mental_score = 85.0  # default healthy
     try:
         sm = data.get("saude_mental", pd.DataFrame())
-        if not sm.empty and "indicador" in sm.columns:
-            total_row = sm[sm["indicador"].str.lower().str.contains("total", na=False)]
-            if not total_row.empty:
-                vals = []
+        exam_vol = data.get("exames", {}).get("volume", pd.DataFrame())
+
+        if not sm.empty and "indicador" in sm.columns and not exam_vol.empty:
+            # Filter by units if provided, otherwise use the Total row
+            if selected_units:
+                sm_data = filter_saude_mental_by_units(sm, selected_units)
+                if sm_data.empty:
+                    sm_data = sm[sm["indicador"].str.lower().str.contains("total", na=False)]
+            else:
+                sm_data = sm[sm["indicador"].str.lower().str.contains("total", na=False)]
+
+            if not sm_data.empty:
+                monthly_scores = []
                 for m in months:
-                    if m in total_row.columns:
-                        vals.append(float(total_row.iloc[0][m] or 0))
-                if vals:
-                    avg_srq = sum(vals) / len(vals)
-                    # Lower SRQ is better. Cap impact.
-                    mental_score = max(40.0, 100.0 - (avg_srq * 4.0))
+                    if m in sm_data.columns and m in exam_vol.columns:
+                        # Soma dos casos alterados no mês (unidades selecionadas ou total)
+                        casos = float(sm_data[m].sum() or 0)
+                        # Soma dos exames no mês (assume-se que exam_vol já está no escopo correto)
+                        v_exames = float(exam_vol[m].sum() or 0)
+
+                        if v_exames > 0:
+                            taxa = (casos / v_exames) * 100
+                            monthly_scores.append(max(0.0, 100.0 - taxa))
+                        else:
+                            monthly_scores.append(100.0)
+
+                if monthly_scores:
+                    mental_score = sum(monthly_scores) / len(monthly_scores)
     except Exception:
         pass
 
