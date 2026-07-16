@@ -1246,10 +1246,9 @@ if page == "Resumo Executivo":
     current_col = tr("current", language_code)
     previous_col = tr("previous", language_code)
     variation_col = tr("variation", language_code)
-    target_col = tr("target", language_code)
     display_matrix(
         comparison_table,
-        decimal_columns=[current_col, previous_col, target_col],
+        decimal_columns=[current_col, previous_col],
         percent_columns=[variation_col],
         variation_columns=[variation_col],
         variation_semantics="neutral",
