@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: dashboard-sm-cgr-2026
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.11
+      - key: DATA_SOURCE
+        value: local
+      - key: AUTH_MODE
+        value: password
+      - key: APP_PASSWORD
+        generateValue: true
