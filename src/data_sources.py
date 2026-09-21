@@ -25,6 +25,13 @@ from urllib.parse import unquote, urlparse
 import requests
 
 try:
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+    from google.oauth2 import service_account
+except ModuleNotFoundError:  # Optional until DATA_SOURCE=google_drive is selected.
+    GoogleAuthRequest = None  # type: ignore[assignment]
+    service_account = None  # type: ignore[assignment]
+
+try:
     import streamlit as st
 except ModuleNotFoundError:  # CLI validation before UI dependencies are installed.
     class _CacheDataFallback:
@@ -516,6 +523,54 @@ def _prepare_sharepoint() -> PreparedDataSource:
     )
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _google_drive_access_token(credentials_json: str) -> str:
+    """Create a short-lived Drive token without exposing the private key to the UI."""
+    if service_account is None or GoogleAuthRequest is None:
+        raise DataSourceError("Instale a dependência google-auth para usar DATA_SOURCE=google_drive.")
+    try:
+        info = json.loads(credentials_json)
+        credentials = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        )
+        credentials.refresh(GoogleAuthRequest())
+    except (TypeError, ValueError, json.JSONDecodeError, OSError) as exc:
+        raise DataSourceError("GOOGLE_SERVICE_ACCOUNT_JSON inválido ou incompleto.") from exc
+    if not credentials.token:
+        raise DataSourceError("A conta de serviço não retornou um token do Google Drive.")
+    return str(credentials.token)
+
+
+def _prepare_google_drive() -> PreparedDataSource:
+    file_id = str(get_setting("DATA_GOOGLE_DRIVE_FILE_ID", "")).strip()
+    credentials_json = str(get_setting("GOOGLE_SERVICE_ACCOUNT_JSON", "")).strip()
+    missing = [
+        key for key, value in {
+            "DATA_GOOGLE_DRIVE_FILE_ID": file_id,
+            "GOOGLE_SERVICE_ACCOUNT_JSON": credentials_json,
+        }.items() if not value
+    ]
+    if missing:
+        raise DataSourceError("Fonte Google Drive incompleta. Configure: " + ", ".join(missing))
+    token = _google_drive_access_token(credentials_json)
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+    content, headers, checked_raw = _download_url(url, token)
+    checked_at = datetime.fromisoformat(checked_raw)
+    digest = sha256(content).hexdigest()
+    identifier = f"google_drive:{file_id}"
+    changed_at = _record_remote_state(
+        identifier, digest, checked_at=checked_at, size_bytes=len(content),
+        etag=headers.get("etag", ""), last_modified_header=headers.get("last-modified", ""),
+    )
+    return _save_snapshot(
+        content, DEFAULT_REMOTE_FILENAME, source_type="google_drive",
+        display_name=f"{DEFAULT_REMOTE_FILENAME} (Google Drive)",
+        detail=f"Google Drive file={file_id}", original_path=identifier,
+        modified_at=changed_at, changed_at=changed_at, checked_at=checked_at,
+        etag=headers.get("etag", ""), last_modified_header=headers.get("last-modified", ""),
+    )
+
+
 def last_valid_paths() -> tuple[Path, Path]:
     return runtime_dir() / "last_valid.xlsx", runtime_dir() / "last_valid.json"
 
@@ -637,8 +692,8 @@ def cleanup_snapshot_cache() -> None:
 def prepare_data_source() -> PreparedDataSource:
     """Resolve the workbook based on ``DATA_SOURCE``.
 
-    Supported values: ``google_sheets``/``url`` (default), ``local`` and
-    ``sharepoint``.
+    Supported values: ``google_sheets``/``url`` (default), ``google_drive``,
+    ``local`` and ``sharepoint``.
     """
     source_type = str(get_setting("DATA_SOURCE", "google_sheets")).strip().casefold()
     if source_type == "local":
@@ -649,8 +704,10 @@ def prepare_data_source() -> PreparedDataSource:
         return _prepare_url(url, token)
     if source_type == "sharepoint":
         return _prepare_sharepoint()
+    if source_type == "google_drive":
+        return _prepare_google_drive()
     raise DataSourceError(
-        f"DATA_SOURCE inválido: {source_type}. Use google_sheets, url, local ou sharepoint."
+        f"DATA_SOURCE inválido: {source_type}. Use google_sheets, google_drive, url, local ou sharepoint."
     )
 
 
@@ -667,4 +724,6 @@ def probe_data_source(source: PreparedDataSource) -> PreparedDataSource:
         return _prepare_url(url, str(get_setting("DATA_BEARER_TOKEN", "")))
     if source.source_type == "sharepoint":
         return _prepare_sharepoint()
+    if source.source_type == "google_drive":
+        return _prepare_google_drive()
     return prepare_data_source()

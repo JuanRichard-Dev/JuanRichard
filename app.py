@@ -37,6 +37,11 @@ except (RuntimeError, OSError):
 
 import pandas as pd
 import streamlit as st
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ModuleNotFoundError:  # Keeps lightweight CI smoke tests dependency-free.
+    def st_autorefresh(*_args: Any, **_kwargs: Any) -> int:
+        return 0
 
 # ---------------------------------------------------------------------------
 # Page configuration — must be the first Streamlit command
@@ -48,6 +53,15 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 st.set_option("client.showSidebarNavigation", False)
+
+# Reconsulta a fonte remota sem exigir interação do usuário. O intervalo é
+# configurável no ambiente; 600 segundos corresponde aos 10 minutos pedidos.
+if os.getenv("AUTO_REFRESH_ENABLED", "true").strip().casefold() not in {"0", "false", "no", "não"}:
+    try:
+        _auto_refresh_seconds = max(30, int(os.getenv("AUTO_REFRESH_SECONDS", "600")))
+    except ValueError:
+        _auto_refresh_seconds = 600
+    st_autorefresh(interval=_auto_refresh_seconds * 1000, key="dashboard_auto_refresh")
 
 
 # ---------------------------------------------------------------------------
@@ -2411,4 +2425,3 @@ elif page == "Saúde Mental":
             "O SRQ-20 é apresentado de forma agregada como dado de rastreamento. O resultado alterado não representa diagnóstico clínico individual nem estabelece causa ocupacional.",
             "",
         )
-
