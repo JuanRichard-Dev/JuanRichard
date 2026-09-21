@@ -559,7 +559,7 @@ def _prepare_google_drive() -> PreparedDataSource:
     digest = sha256(content).hexdigest()
     identifier = f"google_drive:{file_id}"
     changed_at = _record_remote_state(
-        identifier, digest, checked_at=checked_at, size_bytes=len(content),
+        identifier, digest, checked_at=checked_at, header_modified=_parse_http_datetime(headers.get("last-modified", "")), size_bytes=len(content),
         etag=headers.get("etag", ""), last_modified_header=headers.get("last-modified", ""),
     )
     return _save_snapshot(
