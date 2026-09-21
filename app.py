@@ -56,12 +56,31 @@ st.set_option("client.showSidebarNavigation", False)
 
 # Reconsulta a fonte remota sem exigir interação do usuário. O intervalo é
 # configurável no ambiente; 600 segundos corresponde aos 10 minutos pedidos.
-if os.getenv("AUTO_REFRESH_ENABLED", "true").strip().casefold() not in {"0", "false", "no", "não"}:
+_auto_refresh_enabled = os.getenv("AUTO_REFRESH_ENABLED", "")
+if not _auto_refresh_enabled:
     try:
-        _auto_refresh_seconds = max(30, int(os.getenv("AUTO_REFRESH_SECONDS", "600")))
+        _auto_refresh_enabled = str(st.secrets.get("AUTO_REFRESH_ENABLED", "true"))
+    except Exception:
+        _auto_refresh_enabled = "true"
+if _auto_refresh_enabled.strip().casefold() not in {"0", "false", "no", "não"}:
+    try:
+        _refresh_setting = os.getenv("AUTO_REFRESH_SECONDS", "")
+        if not _refresh_setting:
+            try:
+                _refresh_setting = str(st.secrets.get("AUTO_REFRESH_SECONDS", "600"))
+            except Exception:
+                _refresh_setting = "600"
+        _auto_refresh_seconds = max(30, int(_refresh_setting))
     except ValueError:
         _auto_refresh_seconds = 600
-    st_autorefresh(interval=_auto_refresh_seconds * 1000, key="dashboard_auto_refresh")
+    _auto_refresh_count = st_autorefresh(
+        interval=_auto_refresh_seconds * 1000,
+        key="dashboard_auto_refresh",
+    )
+    if _auto_refresh_count:
+        # The remote download and parsed tables are cached. Clear them on the
+        # timer tick so the next source resolution actually checks Drive.
+        st.cache_data.clear()
 
 
 # ---------------------------------------------------------------------------
